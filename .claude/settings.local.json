@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx create-next-app@14 . --typescript --tailwind --eslint --app --no-src-dir --import-alias \"@/*\" --yes)",
+      "Bash(cmd.exe /c \"node --version && npm --version && npx --version\")",
+      "Bash(cmd.exe /c \"where node\")",
+      "Bash(cmd.exe /c \"where npm\")",
+      "Read(//c/Users/pedro/AppData/Local/**)",
+      "Read(//c/Users/pedro/**)",
+      "Bash(node --version)",
+      "Bash(cmd.exe /c \"npm run dev 2>&1\")",
+      "Bash(cmd.exe /c \"where npm 2>&1 && npm --version 2>&1\")"
+    ]
+  }
+}
