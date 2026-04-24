@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
+import type { BetaBase64PDFBlock, BetaTextBlockParam } from '@anthropic-ai/sdk/resources/beta/messages/messages'
 
 const SYSTEM_OBRAS = `Você é analista sênior de licitações públicas brasileiras especializado em obras e serviços de engenharia.
 Sua tarefa é analisar o edital fornecido e retornar as informações extraídas em formato JSON.
@@ -154,39 +155,59 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const userContent: Anthropic.MessageParam['content'] = []
+    const systemPrompt = isObras ? SYSTEM_OBRAS : SYSTEM_PRODUTOS
+    const userPrompt = isObras ? PROMPT_OBRAS(empresa, obs) : PROMPT_PRODUTOS(empresa, obs)
+
+    let rawText: string
 
     if (textContent !== null) {
-      userContent.push({
-        type: 'text',
-        text: `CONTEÚDO DO EDITAL:\n\n${textContent}\n\n---\n\n${isObras ? PROMPT_OBRAS(empresa, obs) : PROMPT_PRODUTOS(empresa, obs)}`,
+      // TXT ou DOCX — chamada normal (sem beta)
+      const message = await client.messages.create({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 4096,
+        system: systemPrompt,
+        messages: [
+          {
+            role: 'user',
+            content: [
+              {
+                type: 'text',
+                text: `CONTEÚDO DO EDITAL:\n\n${textContent}\n\n---\n\n${userPrompt}`,
+              } satisfies Anthropic.TextBlockParam,
+            ],
+          },
+        ],
       })
+      rawText = message.content
+        .filter((b) => b.type === 'text')
+        .map((b) => (b as Anthropic.TextBlock).text)
+        .join('')
     } else {
-      userContent.push({
+      // PDF — usa cliente beta (pdfs-2024-09-25) com tipo correto
+      const pdfBlock: BetaBase64PDFBlock = {
         type: 'document',
         source: {
           type: 'base64',
           media_type: 'application/pdf',
           data: base64,
         },
-      } as Anthropic.DocumentBlockParam)
-      userContent.push({
+      }
+      const textBlock: BetaTextBlockParam = {
         type: 'text',
-        text: isObras ? PROMPT_OBRAS(empresa, obs) : PROMPT_PRODUTOS(empresa, obs),
+        text: userPrompt,
+      }
+      const betaMessage = await client.beta.messages.create({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 4096,
+        system: systemPrompt,
+        messages: [{ role: 'user', content: [pdfBlock, textBlock] }],
+        betas: ['pdfs-2024-09-25'],
       })
+      rawText = betaMessage.content
+        .filter((b) => b.type === 'text')
+        .map((b) => (b as Anthropic.TextBlock).text)
+        .join('')
     }
-
-    const message = await client.messages.create({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 4096,
-      system: isObras ? SYSTEM_OBRAS : SYSTEM_PRODUTOS,
-      messages: [{ role: 'user', content: userContent }],
-    })
-
-    const rawText = message.content
-      .filter((b) => b.type === 'text')
-      .map((b) => (b as Anthropic.TextBlock).text)
-      .join('')
 
     const cleaned = rawText
       .replace(/^```json\s*/i, '')
